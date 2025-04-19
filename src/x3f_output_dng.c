@@ -47,6 +47,8 @@ static int get_camf_rect_as_dngrect(x3f_t *x3f, char *name,
   rect[1] = camf_rect[0];
   rect[2] = camf_rect[3] + 1;
   rect[3] = camf_rect[2] + 1;
+    
+  x3f_printf(DEBUG, "get_camf_rect_as_dngrect %d, %d, %d, %d\n", rect[0], rect[1], rect[2], rect[3]);
 
   return 1;
 }
@@ -332,25 +334,26 @@ x3f_return_t x3f_dump_raw_data_as_dng(x3f_t *x3f,
     return X3F_ARGUMENT_ERROR;
   }
 
-  TIFFSetField(f_out, TIFFTAG_SUBFILETYPE, FILETYPE_REDUCEDIMAGE);
-  TIFFSetField(f_out, TIFFTAG_IMAGEWIDTH, preview.columns);
-  TIFFSetField(f_out, TIFFTAG_IMAGELENGTH, preview.rows);
-  TIFFSetField(f_out, TIFFTAG_ROWSPERSTRIP, preview.rows);
-  TIFFSetField(f_out, TIFFTAG_SAMPLESPERPIXEL, preview.channels);
-  TIFFSetField(f_out, TIFFTAG_BITSPERSAMPLE, 8);
-  TIFFSetField(f_out, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
-  TIFFSetField(f_out, TIFFTAG_COMPRESSION, COMPRESSION_NONE);
-  TIFFSetField(f_out, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_RGB);
-  TIFFSetField(f_out, TIFFTAG_ORIENTATION, ORIENTATION_TOPLEFT);
-  TIFFSetField(f_out, TIFFTAG_DNGVERSION, "\001\004\000\000");
-  TIFFSetField(f_out, TIFFTAG_DNGBACKWARDVERSION,
-	       compress ? "\001\004\000\000" : "\001\003\000\000");
-  TIFFSetField(f_out, TIFFTAG_SUBIFD, 1, sub_ifds);
+//  TIFFSetField(f_out, TIFFTAG_SUBFILETYPE, FILETYPE_REDUCEDIMAGE);
+//  TIFFSetField(f_out, TIFFTAG_IMAGEWIDTH, preview.columns);
+//  TIFFSetField(f_out, TIFFTAG_IMAGELENGTH, preview.rows);
+//  TIFFSetField(f_out, TIFFTAG_ROWSPERSTRIP, preview.rows);
+//  TIFFSetField(f_out, TIFFTAG_SAMPLESPERPIXEL, preview.channels);
+//  x3f_printf(DEBUG, "preview TIFFTAG_IMAGEWIDTH %d, %d\n", preview.columns, preview.rows);
+//  TIFFSetField(f_out, TIFFTAG_BITSPERSAMPLE, 8);
+//  TIFFSetField(f_out, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
+//  TIFFSetField(f_out, TIFFTAG_COMPRESSION, COMPRESSION_NONE);
+//  TIFFSetField(f_out, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_RGB);
+    TIFFSetField(f_out, TIFFTAG_ORIENTATION, ORIENTATION_TOPLEFT);
+//  TIFFSetField(f_out, TIFFTAG_DNGVERSION, "\001\004\000\000");
+//  TIFFSetField(f_out, TIFFTAG_DNGBACKWARDVERSION,
+//	       compress ? "\001\004\000\000" : "\001\003\000\000");
+//  TIFFSetField(f_out, TIFFTAG_SUBIFD, 1, sub_ifds);
 
   if (x3f_get_camf_float(x3f, "SensorISO", &sensor_iso) &&
       x3f_get_camf_float(x3f, "CaptureISO", &capture_iso)) {
     double baseline_exposure = log2(capture_iso/sensor_iso);
-    TIFFSetField(f_out, TIFFTAG_BASELINEEXPOSURE, baseline_exposure);
+    TIFFSetField(f_out, TIFFTAG_BASELINEEXPOSURE, baseline_exposure); // OK
   }
 
   ret = write_camera_profiles(x3f, wb, camera_profiles,
@@ -388,14 +391,15 @@ x3f_return_t x3f_dump_raw_data_as_dng(x3f_t *x3f,
   vec_double_to_float(gain_inv_mat, camera_calibration1, 9);
   TIFFSetField(f_out, TIFFTAG_CAMERACALIBRATION1, 9, camera_calibration1);
 
-  for (row=0; row < preview.rows; row++)
-    TIFFWriteScanline(f_out, preview.data + preview.row_stride*row, row, 0);
-
-  TIFFWriteDirectory(f_out);
+//  for (row=0; row < preview.rows; row++)
+//    TIFFWriteScanline(f_out, preview.data + preview.row_stride*row, row, 0);
+//
+//  TIFFWriteDirectory(f_out);
 
   TIFFSetField(f_out, TIFFTAG_SUBFILETYPE, 0);
   TIFFSetField(f_out, TIFFTAG_IMAGEWIDTH, image.columns);
   TIFFSetField(f_out, TIFFTAG_IMAGELENGTH, image.rows);
+  x3f_printf(DEBUG, "TIFFTAG_IMAGEWIDTH %d, %d\n", image.columns, image.rows);
   TIFFSetField(f_out, TIFFTAG_ROWSPERSTRIP, 32);
   TIFFSetField(f_out, TIFFTAG_SAMPLESPERPIXEL, 3);
   TIFFSetField(f_out, TIFFTAG_BITSPERSAMPLE, 16);
@@ -403,19 +407,33 @@ x3f_return_t x3f_dump_raw_data_as_dng(x3f_t *x3f,
   TIFFSetField(f_out, TIFFTAG_COMPRESSION,
 	       compress ? COMPRESSION_ADOBE_DEFLATE : COMPRESSION_NONE);
   TIFFSetField(f_out, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_LINEARRAW);
+  TIFFSetField(f_out, TIFFTAG_DNGVERSION, "\001\004\000\000");
+  TIFFSetField(f_out, TIFFTAG_DNGBACKWARDVERSION, "\001\004\000\000");
   /* Prevent further chroma denoising in DNG processing software */
-  TIFFSetField(f_out, TIFFTAG_CHROMABLURRADIUS, 0.0);
+  TIFFSetField(f_out, TIFFTAG_CHROMABLURRADIUS, 0.0);  // OK
 
   vec_double_to_float(ilevels.black, black_level, 3);
-  TIFFSetField(f_out, TIFFTAG_BLACKLEVEL, 3, black_level);
-  TIFFSetField(f_out, TIFFTAG_WHITELEVEL, 3, ilevels.white);
+  TIFFSetField(f_out, TIFFTAG_BLACKLEVEL, 3, black_level);  // OK
+  TIFFSetField(f_out, TIFFTAG_WHITELEVEL, 3, ilevels.white); // OK
 
   if (apply_sgain)
     if (!write_spatial_gain(x3f, &image, wb, f_out))
       x3f_printf(WARN, "Could not get spatial gain\n");
 
-  if (get_camf_rect_as_dngrect(x3f, "ActiveImageArea", &image, 1, active_area))
-    TIFFSetField(f_out, TIFFTAG_ACTIVEAREA, active_area);
+    if (get_camf_rect_as_dngrect(x3f, "ActiveImageArea", &image, 1, active_area)) {
+//        active_area[0] = 4;
+//        active_area[2] = active_area[2] - active_area[0];
+//        active_area[3] = active_area[3] - active_area[1];
+//        TIFFSetField(f_out, TIFFTAG_ACTIVEAREA, active_area);
+//        float cropsize[2] = {0,0};
+//        cropsize[0] = active_area[1];
+//        cropsize[1] = active_area[0];
+//        TIFFSetField(f_out, TIFFTAG_DEFAULTCROPORIGIN, cropsize);
+//        
+//        cropsize[0] = active_area[3] - active_area[1];
+//        cropsize[1] = active_area[2] - active_area[0];
+//        TIFFSetField(f_out, TIFFTAG_DEFAULTCROPSIZE, cropsize);
+    }
 
   for (row=0; row < image.rows; row++)
     TIFFWriteScanline(f_out, image.data + image.row_stride*row, row, 0);

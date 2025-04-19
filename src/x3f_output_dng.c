@@ -125,6 +125,7 @@ static int write_spatial_gain(x3f_t *x3f, x3f_area16_t *image, char *wb,
 
   x3f_cleanup_spatial_gain(corr, corr_num);
 
+    x3f_printf(DEBUG, "TIFFTAG_OPCODELIST2 written.\n");
   TIFFSetField(tiff, TIFFTAG_OPCODELIST2, opcode_list_size, opcode_list);
 
   return 1;
@@ -356,16 +357,17 @@ x3f_return_t x3f_dump_raw_data_as_dng(x3f_t *x3f,
     TIFFSetField(f_out, TIFFTAG_BASELINEEXPOSURE, baseline_exposure); // OK
   }
 
-  ret = write_camera_profiles(x3f, wb, camera_profiles,
-			      sizeof(camera_profiles)/sizeof(camera_profile_t),
-			      f_out);
-  if (ret != X3F_OK) {
-    x3f_printf(ERR, "Could not write camera profiles\n");
-    TIFFClose(f_out);
-    free(image.buf);
-    free(preview.buf);
-    return ret;
-  }
+    // TODO: check
+//  ret = write_camera_profiles(x3f, wb, camera_profiles,
+//			      sizeof(camera_profiles)/sizeof(camera_profile_t),
+//			      f_out);
+//  if (ret != X3F_OK) {
+//    x3f_printf(ERR, "Could not write camera profiles\n");
+//    TIFFClose(f_out);
+//    free(image.buf);
+//    free(preview.buf);
+//    return ret;
+//  }
 
   if (!x3f_get_gain(x3f, wb, gain)) {
     x3f_printf(ERR, "Could not get gain for white balance: %s\n", wb);
@@ -376,7 +378,7 @@ x3f_return_t x3f_dump_raw_data_as_dng(x3f_t *x3f,
   }
   x3f_3x1_invert(gain, gain_inv);
   vec_double_to_float(gain_inv, as_shot_neutral, 3);
-  TIFFSetField(f_out, TIFFTAG_ASSHOTNEUTRAL, 3, as_shot_neutral);
+//  TIFFSetField(f_out, TIFFTAG_ASSHOTNEUTRAL, 3, as_shot_neutral); // TODO: check
 
 #define WB_D65 "Overcast"
   if (!x3f_get_gain(x3f, WB_D65, gain)) {
@@ -389,7 +391,7 @@ x3f_return_t x3f_dump_raw_data_as_dng(x3f_t *x3f,
   x3f_3x1_invert(gain, gain_inv);
   x3f_3x3_diag(gain_inv, gain_inv_mat);
   vec_double_to_float(gain_inv_mat, camera_calibration1, 9);
-  TIFFSetField(f_out, TIFFTAG_CAMERACALIBRATION1, 9, camera_calibration1);
+//  TIFFSetField(f_out, TIFFTAG_CAMERACALIBRATION1, 9, camera_calibration1); // TODO: check
 
 //  for (row=0; row < preview.rows; row++)
 //    TIFFWriteScanline(f_out, preview.data + preview.row_stride*row, row, 0);

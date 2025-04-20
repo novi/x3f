@@ -163,6 +163,9 @@ static int write_camera_profile(x3f_t *x3f, char *wb,
 {
   double bmt_to_xyz[9], xyz_to_bmt[9], bmt_to_d50[9];
   float color_matrix1[9], forward_matrix1[9];
+    
+    TIFFSetField(tiff, TIFFTAG_CALIBRATIONILLUMINANT1, 21); // D65, // added
+//    TIFFSetField(tiff, TIFFTAG_CALIBRATIONILLUMINANT1, 23); // D50, // added
 
   if (!profile->get_bmt_to_xyz(x3f, wb, bmt_to_xyz)) {
     x3f_printf(ERR, "Could not get bmt_to_xyz for white balance: %s\n", wb);
@@ -409,7 +412,6 @@ x3f_return_t x3f_dump_raw_data_as_dng(x3f_t *x3f,
         x3f_printf(DEBUG, "%f", camera_calibration1[i]);
     }
   TIFFSetField(f_out, TIFFTAG_CAMERACALIBRATION1, 9, camera_calibration1); // OK
-    TIFFSetField(f_out, TIFFTAG_CALIBRATIONILLUMINANT1, 21); // D65, // added
 
 //  for (row=0; row < preview.rows; row++)
 //    TIFFWriteScanline(f_out, preview.data + preview.row_stride*row, row, 0);

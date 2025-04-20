@@ -171,6 +171,11 @@ static int write_camera_profile(x3f_t *x3f, char *wb,
   x3f_3x3_inverse(bmt_to_xyz, xyz_to_bmt);
   vec_double_to_float(xyz_to_bmt, color_matrix1, 9);
   TIFFSetField(tiff, TIFFTAG_COLORMATRIX1, 9, color_matrix1);
+    printf("color_matrix1: ");
+    for (size_t i = 0; i < 9; i++) {
+        printf(" %f", color_matrix1[i]);
+    }
+    printf("\n");
 
   if (profile->grayscale_mix) {
     double d50_xyz[3] = {0.96422, 1.00000, 0.82521};
@@ -227,6 +232,8 @@ static x3f_return_t write_camera_profiles(x3f_t *x3f, char *wb,
   FILE *tiff_file;
   uint32_t *profile_offsets;
   int i;
+    
+    x3f_printf(DEBUG, "write_camera_profiles num: %d wb: %s\n", num, wb);
 
   assert(num >= 1);
   if (!write_camera_profile(x3f, wb, &profiles[0], tiff))
@@ -357,17 +364,20 @@ x3f_return_t x3f_dump_raw_data_as_dng(x3f_t *x3f,
     TIFFSetField(f_out, TIFFTAG_BASELINEEXPOSURE, baseline_exposure); // OK
   }
 
-    // TODO: check
+    // OK
 //  ret = write_camera_profiles(x3f, wb, camera_profiles,
 //			      sizeof(camera_profiles)/sizeof(camera_profile_t),
 //			      f_out);
-//  if (ret != X3F_OK) {
-//    x3f_printf(ERR, "Could not write camera profiles\n");
-//    TIFFClose(f_out);
-//    free(image.buf);
-//    free(preview.buf);
-//    return ret;
-//  }
+    ret = write_camera_profiles(x3f, wb, camera_profiles,
+                    1, // only Default profile
+                    f_out);
+  if (ret != X3F_OK) {
+    x3f_printf(ERR, "Could not write camera profiles\n");
+    TIFFClose(f_out);
+    free(image.buf);
+    free(preview.buf);
+    return ret;
+  }
 
   if (!x3f_get_gain(x3f, wb, gain)) {
     x3f_printf(ERR, "Could not get gain for white balance: %s\n", wb);
@@ -378,7 +388,11 @@ x3f_return_t x3f_dump_raw_data_as_dng(x3f_t *x3f,
   }
   x3f_3x1_invert(gain, gain_inv);
   vec_double_to_float(gain_inv, as_shot_neutral, 3);
-//  TIFFSetField(f_out, TIFFTAG_ASSHOTNEUTRAL, 3, as_shot_neutral); // TODO: check
+//    as_shot_neutral[0] = as_shot_neutral[0] * 10;
+//    as_shot_neutral[1] = as_shot_neutral[1] * 10;
+//    as_shot_neutral[2] = as_shot_neutral[2] * 10;
+  x3f_printf(DEBUG, "as_shot_neutral %f, %f, %f\n", as_shot_neutral[0], as_shot_neutral[1], as_shot_neutral[2]);
+  TIFFSetField(f_out, TIFFTAG_ASSHOTNEUTRAL, 3, as_shot_neutral); // OK
 
 #define WB_D65 "Overcast"
   if (!x3f_get_gain(x3f, WB_D65, gain)) {
@@ -391,7 +405,11 @@ x3f_return_t x3f_dump_raw_data_as_dng(x3f_t *x3f,
   x3f_3x1_invert(gain, gain_inv);
   x3f_3x3_diag(gain_inv, gain_inv_mat);
   vec_double_to_float(gain_inv_mat, camera_calibration1, 9);
-//  TIFFSetField(f_out, TIFFTAG_CAMERACALIBRATION1, 9, camera_calibration1); // TODO: check
+    for (size_t i = 0; i < 9; i++) {
+        x3f_printf(DEBUG, "%f", camera_calibration1[i]);
+    }
+  TIFFSetField(f_out, TIFFTAG_CAMERACALIBRATION1, 9, camera_calibration1); // OK
+    TIFFSetField(f_out, TIFFTAG_CALIBRATIONILLUMINANT1, 21); // D65, // added
 
 //  for (row=0; row < preview.rows; row++)
 //    TIFFWriteScanline(f_out, preview.data + preview.row_stride*row, row, 0);

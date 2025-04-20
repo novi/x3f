@@ -444,7 +444,7 @@ x3f_return_t x3f_dump_raw_data_as_dng(x3f_t *x3f,
 //        active_area[0] = 4;
 //        active_area[2] = active_area[2] - active_area[0];
 //        active_area[3] = active_area[3] - active_area[1];
-//        TIFFSetField(f_out, TIFFTAG_ACTIVEAREA, active_area);
+        TIFFSetField(f_out, TIFFTAG_ACTIVEAREA, active_area);
 //        float cropsize[2] = {0,0};
 //        cropsize[0] = active_area[1];
 //        cropsize[1] = active_area[0];

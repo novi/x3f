@@ -350,7 +350,6 @@ x3f_return_t x3f_dump_raw_data_as_dng(x3f_t *x3f,
 //  TIFFSetField(f_out, TIFFTAG_IMAGELENGTH, preview.rows);
 //  TIFFSetField(f_out, TIFFTAG_ROWSPERSTRIP, preview.rows);
 //  TIFFSetField(f_out, TIFFTAG_SAMPLESPERPIXEL, preview.channels);
-//  x3f_printf(DEBUG, "preview TIFFTAG_IMAGEWIDTH %d, %d\n", preview.columns, preview.rows);
 //  TIFFSetField(f_out, TIFFTAG_BITSPERSAMPLE, 8);
 //  TIFFSetField(f_out, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
 //  TIFFSetField(f_out, TIFFTAG_COMPRESSION, COMPRESSION_NONE);
@@ -364,10 +363,9 @@ x3f_return_t x3f_dump_raw_data_as_dng(x3f_t *x3f,
   if (x3f_get_camf_float(x3f, "SensorISO", &sensor_iso) &&
       x3f_get_camf_float(x3f, "CaptureISO", &capture_iso)) {
     double baseline_exposure = log2(capture_iso/sensor_iso);
-    TIFFSetField(f_out, TIFFTAG_BASELINEEXPOSURE, baseline_exposure); // OK
+    TIFFSetField(f_out, TIFFTAG_BASELINEEXPOSURE, baseline_exposure);
   }
 
-    // OK
 //  ret = write_camera_profiles(x3f, wb, camera_profiles,
 //			      sizeof(camera_profiles)/sizeof(camera_profile_t),
 //			      f_out);
@@ -391,11 +389,7 @@ x3f_return_t x3f_dump_raw_data_as_dng(x3f_t *x3f,
   }
   x3f_3x1_invert(gain, gain_inv);
   vec_double_to_float(gain_inv, as_shot_neutral, 3);
-//    as_shot_neutral[0] = as_shot_neutral[0] * 10;
-//    as_shot_neutral[1] = as_shot_neutral[1] * 10;
-//    as_shot_neutral[2] = as_shot_neutral[2] * 10;
-  x3f_printf(DEBUG, "as_shot_neutral %f, %f, %f\n", as_shot_neutral[0], as_shot_neutral[1], as_shot_neutral[2]);
-  TIFFSetField(f_out, TIFFTAG_ASSHOTNEUTRAL, 3, as_shot_neutral); // OK
+  TIFFSetField(f_out, TIFFTAG_ASSHOTNEUTRAL, 3, as_shot_neutral);
 
 #define WB_D65 "Overcast"
   if (!x3f_get_gain(x3f, WB_D65, gain)) {
@@ -411,7 +405,7 @@ x3f_return_t x3f_dump_raw_data_as_dng(x3f_t *x3f,
     for (size_t i = 0; i < 9; i++) {
         x3f_printf(DEBUG, "%f", camera_calibration1[i]);
     }
-  TIFFSetField(f_out, TIFFTAG_CAMERACALIBRATION1, 9, camera_calibration1); // OK
+  TIFFSetField(f_out, TIFFTAG_CAMERACALIBRATION1, 9, camera_calibration1);
 
 //  for (row=0; row < preview.rows; row++)
 //    TIFFWriteScanline(f_out, preview.data + preview.row_stride*row, row, 0);
@@ -443,18 +437,7 @@ x3f_return_t x3f_dump_raw_data_as_dng(x3f_t *x3f,
       x3f_printf(WARN, "Could not get spatial gain\n");
 
     if (get_camf_rect_as_dngrect(x3f, "ActiveImageArea", &image, 1, active_area)) {
-//        active_area[0] = 4;
-//        active_area[2] = active_area[2] - active_area[0];
-//        active_area[3] = active_area[3] - active_area[1];
-        TIFFSetField(f_out, TIFFTAG_ACTIVEAREA, active_area);
-//        float cropsize[2] = {0,0};
-//        cropsize[0] = active_area[1];
-//        cropsize[1] = active_area[0];
-//        TIFFSetField(f_out, TIFFTAG_DEFAULTCROPORIGIN, cropsize);
-//        
-//        cropsize[0] = active_area[3] - active_area[1];
-//        cropsize[1] = active_area[2] - active_area[0];
-//        TIFFSetField(f_out, TIFFTAG_DEFAULTCROPSIZE, cropsize);
+      TIFFSetField(f_out, TIFFTAG_ACTIVEAREA, active_area);
     }
 
   for (row=0; row < image.rows; row++)

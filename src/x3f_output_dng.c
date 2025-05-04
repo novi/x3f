@@ -160,6 +160,8 @@ static int write_camera_profile(x3f_t *x3f, char *wb,
 {
   double bmt_to_xyz[9], xyz_to_bmt[9], bmt_to_d50[9];
   float color_matrix1[9], forward_matrix1[9];
+    
+  TIFFSetField(tiff, TIFFTAG_CALIBRATIONILLUMINANT1, 21); // D65, // added
 
   if (!profile->get_bmt_to_xyz(x3f, wb, bmt_to_xyz)) {
     x3f_printf(ERR, "Could not get bmt_to_xyz for white balance: %s\n", wb);
@@ -332,20 +334,20 @@ x3f_return_t x3f_dump_raw_data_as_dng(x3f_t *x3f,
     return X3F_ARGUMENT_ERROR;
   }
 
-  TIFFSetField(f_out, TIFFTAG_SUBFILETYPE, FILETYPE_REDUCEDIMAGE);
-  TIFFSetField(f_out, TIFFTAG_IMAGEWIDTH, preview.columns);
-  TIFFSetField(f_out, TIFFTAG_IMAGELENGTH, preview.rows);
-  TIFFSetField(f_out, TIFFTAG_ROWSPERSTRIP, preview.rows);
-  TIFFSetField(f_out, TIFFTAG_SAMPLESPERPIXEL, preview.channels);
-  TIFFSetField(f_out, TIFFTAG_BITSPERSAMPLE, 8);
-  TIFFSetField(f_out, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
-  TIFFSetField(f_out, TIFFTAG_COMPRESSION, COMPRESSION_NONE);
-  TIFFSetField(f_out, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_RGB);
+//  TIFFSetField(f_out, TIFFTAG_SUBFILETYPE, FILETYPE_REDUCEDIMAGE);
+//  TIFFSetField(f_out, TIFFTAG_IMAGEWIDTH, preview.columns);
+//  TIFFSetField(f_out, TIFFTAG_IMAGELENGTH, preview.rows);
+//  TIFFSetField(f_out, TIFFTAG_ROWSPERSTRIP, preview.rows);
+//  TIFFSetField(f_out, TIFFTAG_SAMPLESPERPIXEL, preview.channels);
+//  TIFFSetField(f_out, TIFFTAG_BITSPERSAMPLE, 8);
+//  TIFFSetField(f_out, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
+//  TIFFSetField(f_out, TIFFTAG_COMPRESSION, COMPRESSION_NONE);
+//  TIFFSetField(f_out, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_RGB);
   TIFFSetField(f_out, TIFFTAG_ORIENTATION, ORIENTATION_TOPLEFT);
-  TIFFSetField(f_out, TIFFTAG_DNGVERSION, "\001\004\000\000");
-  TIFFSetField(f_out, TIFFTAG_DNGBACKWARDVERSION,
-	       compress ? "\001\004\000\000" : "\001\003\000\000");
-  TIFFSetField(f_out, TIFFTAG_SUBIFD, 1, sub_ifds);
+//  TIFFSetField(f_out, TIFFTAG_DNGVERSION, "\001\004\000\000");
+//  TIFFSetField(f_out, TIFFTAG_DNGBACKWARDVERSION,
+//	       compress ? "\001\004\000\000" : "\001\003\000\000");
+//  TIFFSetField(f_out, TIFFTAG_SUBIFD, 1, sub_ifds);
 
   if (x3f_get_camf_float(x3f, "SensorISO", &sensor_iso) &&
       x3f_get_camf_float(x3f, "CaptureISO", &capture_iso)) {
@@ -353,9 +355,12 @@ x3f_return_t x3f_dump_raw_data_as_dng(x3f_t *x3f,
     TIFFSetField(f_out, TIFFTAG_BASELINEEXPOSURE, baseline_exposure);
   }
 
-  ret = write_camera_profiles(x3f, wb, camera_profiles,
-			      sizeof(camera_profiles)/sizeof(camera_profile_t),
-			      f_out);
+//  ret = write_camera_profiles(x3f, wb, camera_profiles,
+//			      sizeof(camera_profiles)/sizeof(camera_profile_t),
+//			      f_out);
+    ret = write_camera_profiles(x3f, wb, camera_profiles,
+                    1, // only Default profile
+                    f_out);
   if (ret != X3F_OK) {
     x3f_printf(ERR, "Could not write camera profiles\n");
     TIFFClose(f_out);
@@ -388,10 +393,10 @@ x3f_return_t x3f_dump_raw_data_as_dng(x3f_t *x3f,
   vec_double_to_float(gain_inv_mat, camera_calibration1, 9);
   TIFFSetField(f_out, TIFFTAG_CAMERACALIBRATION1, 9, camera_calibration1);
 
-  for (row=0; row < preview.rows; row++)
-    TIFFWriteScanline(f_out, preview.data + preview.row_stride*row, row, 0);
-
-  TIFFWriteDirectory(f_out);
+//  for (row=0; row < preview.rows; row++)
+//    TIFFWriteScanline(f_out, preview.data + preview.row_stride*row, row, 0);
+//
+//  TIFFWriteDirectory(f_out);
 
   TIFFSetField(f_out, TIFFTAG_SUBFILETYPE, 0);
   TIFFSetField(f_out, TIFFTAG_IMAGEWIDTH, image.columns);
@@ -403,6 +408,8 @@ x3f_return_t x3f_dump_raw_data_as_dng(x3f_t *x3f,
   TIFFSetField(f_out, TIFFTAG_COMPRESSION,
 	       compress ? COMPRESSION_ADOBE_DEFLATE : COMPRESSION_NONE);
   TIFFSetField(f_out, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_LINEARRAW);
+  TIFFSetField(f_out, TIFFTAG_DNGVERSION, "\001\004\000\000");
+  TIFFSetField(f_out, TIFFTAG_DNGBACKWARDVERSION, "\001\004\000\000");
   /* Prevent further chroma denoising in DNG processing software */
   TIFFSetField(f_out, TIFFTAG_CHROMABLURRADIUS, 0.0);
 

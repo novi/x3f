@@ -79,18 +79,27 @@ static int get_black_level(x3f_t *x3f,
   if (image->channels < colors) return 0;
 
 #define BOTTOM 1
+#define RIGHT 3
 
-  /* Workaround for bug in DP2 firmware. DarkShieldBottom is specified
-     incorrectly and thus ignored. */
+  /* Workaround for bug in DP2 firmware. DarkShieldBottom is specified incorrectly and thus ignored.
+   *
+   * Also, a workaround for the bright "shielded" region on the right for the DP1M, DP2M, and DP3M.
+   * See https://github.com/Kalpanika/x3f/issues/117
+   * */
   {
     char *cammodel;
 
-    if (x3f_get_prop_entry(x3f, "CAMMODEL", &cammodel))
-      if (!strcmp(cammodel, "SIGMA DP2"))
-	use[BOTTOM] = 0;
+    if (x3f_get_prop_entry(x3f, "CAMMODEL", &cammodel)) {
+      if (!strcmp(cammodel, "SIGMA DP2")) {
+        use[BOTTOM] = 0;
+      }
+      if (!strcmp(cammodel, "SIGMA DP1 Merrill") || !strcmp(cammodel, "SIGMA DP2 Merrill") || !strcmp(cammodel, "SIGMA DP3 Merrill")) {
+        use[RIGHT] = 0;
+      }
+    }
   }
 
-  /* Workaround for bug in sd Quattro H firmaware. DarkShieldBottom is
+  /* Workaround for bug in sd Quattro H firmware. DarkShieldBottom is
      specified incorrectly and thus ignored. */
   {
     uint32_t cameraid;
@@ -589,7 +598,7 @@ static int preprocess_data(x3f_t *x3f, int fix_bad, char *wb, x3f_image_levels_t
   double scale[3], black_level[3], black_dev[3], intermediate_bias;
   int quattro = x3f_image_area_qtop(x3f, &qtop);
   int colors_in = quattro ? 2 : 3;
-
+    double digital_ISO_Gain[3] = {1.0, 1.0, 1.0};
   if (!x3f_image_area(x3f, &image) || image.channels < 3) return 0;
   if (quattro && (qtop.channels < 1 ||
 		  qtop.rows < 2*image.rows || qtop.columns < 2*image.columns))
@@ -627,9 +636,21 @@ static int preprocess_data(x3f_t *x3f, int fix_bad, char *wb, x3f_image_levels_t
   x3f_printf(DEBUG, "max_intermediate = {%u,%u,%u}\n",
 	     ilevels->white[0], ilevels->white[1], ilevels->white[2]);
 
-  for (color = 0; color < 3; color++)
-    scale[color] = (ilevels->white[color] - ilevels->black[color]) /
-      (max_raw[color] - black_level[color]);
+    // Support Digital ISO
+    // https://www.dpreview.com/forums/thread/4262623
+    // https://github.com/etchelepi/x3f_kalpanika
+    if (x3f_get_camf_float_vector(x3f,"DigitalISOGain",digital_ISO_Gain)) {
+      x3f_printf(DEBUG, "digital_ISO_Gain = {%f,%f,%f}\n",
+	     digital_ISO_Gain[0], digital_ISO_Gain[1], digital_ISO_Gain[2]);
+    } else {
+      for (size_t i = 0; i < 3; i ++) {
+          digital_ISO_Gain[i] = 1.0;
+      }
+    }
+
+  for (color = 0; color < 3; color++) {
+    scale[color] = ((ilevels->white[color] - ilevels->black[color]) / (max_raw[color] - black_level[color])) * digital_ISO_Gain[color]; 
+  }
 
   /* Preprocess image data (HUF/TRU->x3rgb16) */
   for (row = 0; row < image.rows; row++)

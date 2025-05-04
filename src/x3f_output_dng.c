@@ -421,9 +421,8 @@ x3f_return_t x3f_dump_raw_data_as_dng(x3f_t *x3f,
     if (!write_spatial_gain(x3f, &image, wb, f_out))
       x3f_printf(WARN, "Could not get spatial gain\n");
 
-    if (get_camf_rect_as_dngrect(x3f, "ActiveImageArea", &image, 1, active_area)) {
-      TIFFSetField(f_out, TIFFTAG_ACTIVEAREA, active_area);
-    }
+  if (get_camf_rect_as_dngrect(x3f, "ActiveImageArea", &image, 1, active_area))
+    TIFFSetField(f_out, TIFFTAG_ACTIVEAREA, active_area);
 
   for (row=0; row < image.rows; row++)
     TIFFWriteScanline(f_out, image.data + image.row_stride*row, row, 0);

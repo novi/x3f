@@ -47,8 +47,6 @@ static int get_camf_rect_as_dngrect(x3f_t *x3f, char *name,
   rect[1] = camf_rect[0];
   rect[2] = camf_rect[3] + 1;
   rect[3] = camf_rect[2] + 1;
-    
-  x3f_printf(DEBUG, "get_camf_rect_as_dngrect %d, %d, %d, %d\n", rect[0], rect[1], rect[2], rect[3]);
 
   return 1;
 }
@@ -125,7 +123,6 @@ static int write_spatial_gain(x3f_t *x3f, x3f_area16_t *image, char *wb,
 
   x3f_cleanup_spatial_gain(corr, corr_num);
 
-    x3f_printf(DEBUG, "TIFFTAG_OPCODELIST2 written.\n");
   TIFFSetField(tiff, TIFFTAG_OPCODELIST2, opcode_list_size, opcode_list);
 
   return 1;
@@ -164,8 +161,7 @@ static int write_camera_profile(x3f_t *x3f, char *wb,
   double bmt_to_xyz[9], xyz_to_bmt[9], bmt_to_d50[9];
   float color_matrix1[9], forward_matrix1[9];
     
-    TIFFSetField(tiff, TIFFTAG_CALIBRATIONILLUMINANT1, 21); // D65, // added
-//    TIFFSetField(tiff, TIFFTAG_CALIBRATIONILLUMINANT1, 23); // D50, // added
+  TIFFSetField(tiff, TIFFTAG_CALIBRATIONILLUMINANT1, 21); // D65, // added
 
   if (!profile->get_bmt_to_xyz(x3f, wb, bmt_to_xyz)) {
     x3f_printf(ERR, "Could not get bmt_to_xyz for white balance: %s\n", wb);
@@ -174,11 +170,6 @@ static int write_camera_profile(x3f_t *x3f, char *wb,
   x3f_3x3_inverse(bmt_to_xyz, xyz_to_bmt);
   vec_double_to_float(xyz_to_bmt, color_matrix1, 9);
   TIFFSetField(tiff, TIFFTAG_COLORMATRIX1, 9, color_matrix1);
-    printf("color_matrix1: ");
-    for (size_t i = 0; i < 9; i++) {
-        printf(" %f", color_matrix1[i]);
-    }
-    printf("\n");
 
   if (profile->grayscale_mix) {
     double d50_xyz[3] = {0.96422, 1.00000, 0.82521};
@@ -235,8 +226,6 @@ static x3f_return_t write_camera_profiles(x3f_t *x3f, char *wb,
   FILE *tiff_file;
   uint32_t *profile_offsets;
   int i;
-    
-    x3f_printf(DEBUG, "write_camera_profiles num: %d wb: %s\n", num, wb);
 
   assert(num >= 1);
   if (!write_camera_profile(x3f, wb, &profiles[0], tiff))
@@ -354,7 +343,7 @@ x3f_return_t x3f_dump_raw_data_as_dng(x3f_t *x3f,
 //  TIFFSetField(f_out, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
 //  TIFFSetField(f_out, TIFFTAG_COMPRESSION, COMPRESSION_NONE);
 //  TIFFSetField(f_out, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_RGB);
-    TIFFSetField(f_out, TIFFTAG_ORIENTATION, ORIENTATION_TOPLEFT);
+  TIFFSetField(f_out, TIFFTAG_ORIENTATION, ORIENTATION_TOPLEFT);
 //  TIFFSetField(f_out, TIFFTAG_DNGVERSION, "\001\004\000\000");
 //  TIFFSetField(f_out, TIFFTAG_DNGBACKWARDVERSION,
 //	       compress ? "\001\004\000\000" : "\001\003\000\000");
@@ -402,9 +391,6 @@ x3f_return_t x3f_dump_raw_data_as_dng(x3f_t *x3f,
   x3f_3x1_invert(gain, gain_inv);
   x3f_3x3_diag(gain_inv, gain_inv_mat);
   vec_double_to_float(gain_inv_mat, camera_calibration1, 9);
-    for (size_t i = 0; i < 9; i++) {
-        x3f_printf(DEBUG, "%f", camera_calibration1[i]);
-    }
   TIFFSetField(f_out, TIFFTAG_CAMERACALIBRATION1, 9, camera_calibration1);
 
 //  for (row=0; row < preview.rows; row++)
@@ -415,7 +401,6 @@ x3f_return_t x3f_dump_raw_data_as_dng(x3f_t *x3f,
   TIFFSetField(f_out, TIFFTAG_SUBFILETYPE, 0);
   TIFFSetField(f_out, TIFFTAG_IMAGEWIDTH, image.columns);
   TIFFSetField(f_out, TIFFTAG_IMAGELENGTH, image.rows);
-  x3f_printf(DEBUG, "TIFFTAG_IMAGEWIDTH %d, %d\n", image.columns, image.rows);
   TIFFSetField(f_out, TIFFTAG_ROWSPERSTRIP, 32);
   TIFFSetField(f_out, TIFFTAG_SAMPLESPERPIXEL, 3);
   TIFFSetField(f_out, TIFFTAG_BITSPERSAMPLE, 16);
@@ -426,11 +411,11 @@ x3f_return_t x3f_dump_raw_data_as_dng(x3f_t *x3f,
   TIFFSetField(f_out, TIFFTAG_DNGVERSION, "\001\004\000\000");
   TIFFSetField(f_out, TIFFTAG_DNGBACKWARDVERSION, "\001\004\000\000");
   /* Prevent further chroma denoising in DNG processing software */
-  TIFFSetField(f_out, TIFFTAG_CHROMABLURRADIUS, 0.0);  // OK
+  TIFFSetField(f_out, TIFFTAG_CHROMABLURRADIUS, 0.0);
 
   vec_double_to_float(ilevels.black, black_level, 3);
-  TIFFSetField(f_out, TIFFTAG_BLACKLEVEL, 3, black_level);  // OK
-  TIFFSetField(f_out, TIFFTAG_WHITELEVEL, 3, ilevels.white); // OK
+  TIFFSetField(f_out, TIFFTAG_BLACKLEVEL, 3, black_level);
+  TIFFSetField(f_out, TIFFTAG_WHITELEVEL, 3, ilevels.white);
 
   if (apply_sgain)
     if (!write_spatial_gain(x3f, &image, wb, f_out))

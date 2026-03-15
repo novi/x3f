@@ -26,4 +26,12 @@ extern x3f_return_t x3f_dump_raw_data_as_dng(x3f_t *x3f, char *outfilename,
 					     int compress,
                          x3f_color_profile_t color_profile);
 
+extern x3f_return_t x3f_dump_layer_as_dng(x3f_t *x3f,
+					  char *outfilename,
+					  int layer,
+					  int fix_bad,
+					  int denoise,
+					  char *wb,
+					  int compress);
+
 #endif

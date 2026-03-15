@@ -20,12 +20,24 @@ def run_conversion(args):
     assert running_proc.returncode is 0
 
 
+def get_layer_outputs(converted_image):
+    root, ext = os.path.splitext(converted_image)
+    if ext.lower() != '.dng':
+        return []
+    return [''.join((root, '.layer', str(layer), '.dng')) for layer in range(3)]
+
+
+def remove_outputs(converted_image):
+    for path in [converted_image] + get_layer_outputs(converted_image):
+        if os.path.isfile(path):
+            os.chmod(path, 0666)
+            os.remove(path)
+
+
 @given(u'an input image {image} without a {converted_image}')
 def step_impl(context, image, converted_image):
     assert os.path.isfile(image)
-    if os.path.isfile(converted_image):
-        os.chmod(converted_image, 0666)
-        os.remove(converted_image)
+    remove_outputs(converted_image)
 
 
 @when(u'the {image} is converted by the code to {file_type}')
@@ -49,6 +61,12 @@ def step_impl(context, image):
     found_executable = get_dist_name()
     args = [found_executable, '-dng', image]
     run_conversion(args)
+
+
+@then(u'the layer DNGs for {converted_image} exist')
+def step_impl(context, converted_image):
+    for layer_output in get_layer_outputs(converted_image):
+        assert os.path.isfile(layer_output)
 
 
 @when(u'the {image} is denoised and converted by the code to a cropped color TIFF')
@@ -85,8 +103,7 @@ def step_impl(context, converted_image, md5):
         found_hash = hashlib.md5(ci.read()).hexdigest()
         print("found_hash: ", found_hash, " expected_hash: ", md5)
         assert md5 == found_hash
-    os.chmod(converted_image, 0666)
-    os.remove(converted_image)  # normally, I'd remove this file in the environment
+    remove_outputs(converted_image)  # normally, I'd remove this file in the environment
     # however, if these files should always be removed, then remove them immediately after
     # the test should be sufficient.  This should be the last 'then' statement
     # if more tests are later made.

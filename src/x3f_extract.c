@@ -58,6 +58,7 @@ static void usage(char *progname)
           "   -raw            Dump RAW area undecoded\n"
           "   -tiff           Dump RAW/color as 3x16 bit TIFF\n"
           "   -dng            Dump RAW as DNG LinearRaw (default)\n"
+          "   -dng-layers     Dump RAW as DNG plus one DNG per sensor layer\n"
           "   -ppm-ascii      Dump RAW/color as 3x16 bit PPM/P3 (ascii)\n"
           "                   NOTE: 16 bit PPM/P3 is not generally supported\n"
           "   -ppm            Dump RAW/color as 3x16 bit PPM/P6 (binary)\n"
@@ -110,9 +111,10 @@ static int check_dir(char *Path)
 }
 
 #define MAXPATH 1000
-#define EXTMAX 10
+#define EXTMAX 32
 #define MAXOUTPATH (MAXPATH+EXTMAX)
 #define MAXTMPPATH (MAXOUTPATH+EXTMAX)
+#define MAX_DNG_OUTPUTS 4
 
 static int safecpy(char *dst, const char *src, int dst_size)
 {
@@ -170,7 +172,140 @@ static int make_paths(const char *inpath, const char *outdir,
   return err;
 }
 
-#define Z extract_jpg=0,extract_raw=0,extract_unconverted_raw=0
+static x3f_t *load_x3f_for_output(char *infile,
+				  int extract_jpg,
+				  int extract_meta,
+				  int extract_raw,
+				  int extract_unconverted_raw,
+				  FILE **f_in_out)
+{
+  FILE *f_in = fopen(infile, "rb");
+  x3f_t *x3f = NULL;
+  x3f_return_t ret;
+
+  if (f_in == NULL) {
+    x3f_printf(ERR, "Could not open infile %s\n", infile);
+    return NULL;
+  }
+
+  x3f_printf(INFO, "READ THE X3F FILE %s\n", infile);
+  x3f = x3f_new_from_file(f_in);
+
+  if (x3f == NULL) {
+    x3f_printf(ERR, "Could not read infile %s\n", infile);
+    fclose(f_in);
+    return NULL;
+  }
+
+  if (extract_jpg) {
+    if (X3F_OK != (ret = x3f_load_data(x3f, x3f_get_thumb_jpeg(x3f)))) {
+      x3f_printf(ERR, "Could not load JPEG thumbnail from %s (%s)\n",
+		 infile, x3f_err(ret));
+      x3f_delete(x3f);
+      fclose(f_in);
+      return NULL;
+    }
+  }
+
+  if (extract_meta) {
+    x3f_directory_entry_t *DE = x3f_get_prop(x3f);
+
+    if (X3F_OK != (ret = x3f_load_data(x3f, x3f_get_camf(x3f)))) {
+      x3f_printf(ERR, "Could not load CAMF from %s (%s)\n",
+		 infile, x3f_err(ret));
+      x3f_delete(x3f);
+      fclose(f_in);
+      return NULL;
+    }
+    if (DE != NULL)
+      /* Not for Quattro */
+      if (X3F_OK != (ret = x3f_load_data(x3f, DE))) {
+	x3f_printf(ERR, "Could not load PROP from %s (%s)\n",
+		   infile, x3f_err(ret));
+	x3f_delete(x3f);
+	fclose(f_in);
+	return NULL;
+      }
+    /* We do not load any JPEG meta data */
+  }
+
+  if (extract_raw) {
+    x3f_directory_entry_t *DE;
+
+    if (NULL == (DE = x3f_get_raw(x3f))) {
+      x3f_printf(ERR, "Could not find any matching RAW format\n");
+      x3f_delete(x3f);
+      fclose(f_in);
+      return NULL;
+    }
+
+    if (X3F_OK != (ret = x3f_load_data(x3f, DE))) {
+      x3f_printf(ERR, "Could not load RAW from %s (%s)\n",
+		 infile, x3f_err(ret));
+      x3f_delete(x3f);
+      fclose(f_in);
+      return NULL;
+    }
+  }
+
+  if (extract_unconverted_raw) {
+    x3f_directory_entry_t *DE;
+
+    if (NULL == (DE = x3f_get_raw(x3f))) {
+      x3f_printf(ERR, "Could not find any matching RAW format\n");
+      x3f_delete(x3f);
+      fclose(f_in);
+      return NULL;
+    }
+
+    if (X3F_OK != (ret = x3f_load_image_block(x3f, DE))) {
+      x3f_printf(ERR, "Could not load unconverted RAW from %s (%s)\n",
+		 infile, x3f_err(ret));
+      x3f_delete(x3f);
+      fclose(f_in);
+      return NULL;
+    }
+  }
+
+  *f_in_out = f_in;
+  return x3f;
+}
+
+static void unlink_outputs(char paths[][MAXOUTPATH+1], int count)
+{
+  int idx;
+
+  for (idx=0; idx<count; idx++)
+    unlink(paths[idx]);
+}
+
+static void unlink_temp_outputs(char paths[][MAXTMPPATH+1], int count)
+{
+  int idx;
+
+  for (idx=0; idx<count; idx++)
+    unlink(paths[idx]);
+}
+
+static int rename_outputs(char tmp[][MAXTMPPATH+1],
+			  char out[][MAXOUTPATH+1],
+			  int count)
+{
+  int idx;
+
+  for (idx=0; idx<count; idx++) {
+    if (rename(tmp[idx], out[idx]) != 0) {
+      x3f_printf(ERR, "Could not rename %s to %s\n", tmp[idx], out[idx]);
+      unlink_outputs(out, count);
+      unlink_temp_outputs(tmp, count);
+      return 0;
+    }
+  }
+
+  return 1;
+}
+
+#define Z extract_jpg=0,extract_raw=0,extract_unconverted_raw=0,dump_dng_layers=0
 
 int main(int argc, char *argv[])
 {
@@ -188,11 +323,11 @@ int main(int argc, char *argv[])
   int files = 0;
   int errors = 0;
   int log_hist = 0;
+  int dump_dng_layers = 0;
   char *wb = NULL;
   int compress = 0;
   int use_opencl = 0;
   char *outdir = NULL;
-  x3f_return_t ret;
 
   int i;
 
@@ -215,6 +350,8 @@ int main(int argc, char *argv[])
       Z, extract_raw = 1, file_type = TIFF;
     else if (!strcmp(argv[i], "-dng"))
       Z, extract_raw = 1, file_type = DNG;
+    else if (!strcmp(argv[i], "-dng-layers"))
+      Z, extract_raw = 1, file_type = DNG, dump_dng_layers = 1;
     else if (!strcmp(argv[i], "-ppm-ascii"))
       Z, extract_raw = 1, file_type = PPMP3;
     else if (!strcmp(argv[i], "-ppm"))
@@ -309,92 +446,48 @@ int main(int argc, char *argv[])
 
   for (; i<argc; i++) {
     char *infile = argv[i];
-    FILE *f_in = fopen(infile, "rb");
+    FILE *f_in = NULL;
+    FILE *layer_f_in = NULL;
     x3f_t *x3f = NULL;
-
-    char tmpfile[MAXTMPPATH+1];
-    char outfile[MAXOUTPATH+1];
-    x3f_return_t ret_dump;
+    x3f_t *layer_x3f = NULL;
+    char tmpfile[MAX_DNG_OUTPUTS][MAXTMPPATH+1] = {{0}};
+    char outfile[MAX_DNG_OUTPUTS][MAXOUTPATH+1] = {{0}};
+    char failed_tmpfile[MAXTMPPATH+1] = "";
+    x3f_return_t ret_dump = X3F_OK;
     int sgain;
+    int output_count = 1;
+    int output_idx;
 
     files++;
 
-    if (f_in == NULL) {
-      x3f_printf(ERR, "Could not open infile %s\n", infile);
+    x3f = load_x3f_for_output(infile, extract_jpg, extract_meta, extract_raw,
+			      extract_unconverted_raw, &f_in);
+    if (x3f == NULL)
       goto found_error;
-    }
 
-    x3f_printf(INFO, "READ THE X3F FILE %s\n", infile);
-    x3f = x3f_new_from_file(f_in);
-
-    if (x3f == NULL) {
-      x3f_printf(ERR, "Could not read infile %s\n", infile);
-      goto found_error;
-    }
-
-    if (extract_jpg) {
-      if (X3F_OK != (ret = x3f_load_data(x3f, x3f_get_thumb_jpeg(x3f)))) {
-	x3f_printf(ERR, "Could not load JPEG thumbnail from %s (%s)\n",
-		   infile, x3f_err(ret));
-	goto found_error;
-      }
-    }
-
-    if (extract_meta) {
-      x3f_directory_entry_t *DE = x3f_get_prop(x3f);
-
-      if (X3F_OK != (ret = x3f_load_data(x3f, x3f_get_camf(x3f)))) {
-	x3f_printf(ERR, "Could not load CAMF from %s (%s)\n",
-		   infile, x3f_err(ret));
-	goto found_error;
-      }
-      if (DE != NULL)
-	/* Not for Quattro */
-	if (X3F_OK != (ret = x3f_load_data(x3f, DE))) {
-	  x3f_printf(ERR, "Could not load PROP from %s (%s)\n",
-		     infile, x3f_err(ret));
-	  goto found_error;
-	}
-      /* We do not load any JPEG meta data */
-    }
-
-    if (extract_raw) {
-      x3f_directory_entry_t *DE;
-
-      if (NULL == (DE = x3f_get_raw(x3f))) {
-	x3f_printf(ERR, "Could not find any matching RAW format\n");
-	goto found_error;
-      }
-
-      if (X3F_OK != (ret = x3f_load_data(x3f, DE))) {
-	x3f_printf(ERR, "Could not load RAW from %s (%s)\n",
-		   infile, x3f_err(ret));
-	goto found_error;
-      }
-    }
-
-    if (extract_unconverted_raw) {
-      x3f_directory_entry_t *DE;
-
-      if (NULL == (DE = x3f_get_raw(x3f))) {
-	x3f_printf(ERR, "Could not find any matching RAW format\n");
-	goto found_error;
-      }
-
-      if (X3F_OK != (ret = x3f_load_image_block(x3f, DE))) {
-	x3f_printf(ERR, "Could not load unconverted RAW from %s (%s)\n",
-		   infile, x3f_err(ret));
-	goto found_error;
-      }
-    }
-
-    if (make_paths(infile, outdir, extension[file_type], tmpfile, outfile)) {
+    if (make_paths(infile, outdir, extension[file_type], tmpfile[0], outfile[0])) {
       x3f_printf(ERR, "Too large outfile path for infile %s and outdir %s\n",
 		 infile, outdir);
       goto found_error;
     }
 
-    unlink(tmpfile);
+    if (dump_dng_layers) {
+      for (output_idx=1; output_idx<MAX_DNG_OUTPUTS; output_idx++) {
+	char layer_ext[EXTMAX+1];
+
+	snprintf(layer_ext, sizeof(layer_ext), ".layer%d.dng", output_idx-1);
+	if (make_paths(infile, outdir, layer_ext,
+		       tmpfile[output_idx], outfile[output_idx])) {
+	  x3f_printf(ERR,
+		     "Too large layer outfile path for infile %s and outdir %s\n",
+		     infile, outdir);
+	  goto found_error;
+	}
+      }
+      output_count = MAX_DNG_OUTPUTS;
+    }
+
+    unlink_temp_outputs(tmpfile, output_count);
 
     /* TODO: Quattro files seem to be already corrected for spatial
        gain. Is that assumption correct? Applying it only worsens the
@@ -404,41 +497,68 @@ int main(int argc, char *argv[])
 
     switch (file_type) {
     case META:
-      x3f_printf(INFO, "Dump META DATA to %s\n", outfile);
-      ret_dump = x3f_dump_meta_data(x3f, tmpfile);
+      x3f_printf(INFO, "Dump META DATA to %s\n", outfile[0]);
+      ret_dump = x3f_dump_meta_data(x3f, tmpfile[0]);
       break;
     case JPEG:
-      x3f_printf(INFO, "Dump JPEG to %s\n", outfile);
-      ret_dump = x3f_dump_jpeg(x3f, tmpfile);
+      x3f_printf(INFO, "Dump JPEG to %s\n", outfile[0]);
+      ret_dump = x3f_dump_jpeg(x3f, tmpfile[0]);
       break;
     case RAW:
-      x3f_printf(INFO, "Dump RAW block to %s\n", outfile);
-      ret_dump = x3f_dump_raw_data(x3f, tmpfile);
+      x3f_printf(INFO, "Dump RAW block to %s\n", outfile[0]);
+      ret_dump = x3f_dump_raw_data(x3f, tmpfile[0]);
       break;
     case TIFF:
-      x3f_printf(INFO, "Dump RAW as TIFF to %s\n", outfile);
-      ret_dump = x3f_dump_raw_data_as_tiff(x3f, tmpfile,
+      x3f_printf(INFO, "Dump RAW as TIFF to %s\n", outfile[0]);
+      ret_dump = x3f_dump_raw_data_as_tiff(x3f, tmpfile[0],
 					   color_encoding,
 					   crop, fix_bad, denoise, sgain, wb,
 					   compress);
       break;
     case DNG:
-      x3f_printf(INFO, "Dump RAW as DNG to %s\n", outfile);
-      ret_dump = x3f_dump_raw_data_as_dng(x3f, tmpfile,
+      x3f_printf(INFO, "Dump RAW as DNG to %s\n", outfile[0]);
+      ret_dump = x3f_dump_raw_data_as_dng(x3f, tmpfile[0],
 					  fix_bad, denoise, sgain, wb,
 					  compress, color_profile);
+      if (ret_dump == X3F_OK && dump_dng_layers) {
+	for (output_idx=1; output_idx<output_count; output_idx++) {
+	  layer_x3f = load_x3f_for_output(infile, 0, extract_meta, extract_raw,
+					  0, &layer_f_in);
+	  if (layer_x3f == NULL) {
+	    ret_dump = X3F_INFILE_ERROR;
+	    safecpy(failed_tmpfile, tmpfile[output_idx], MAXTMPPATH);
+	    break;
+	  }
+
+	  x3f_printf(INFO, "Dump RAW layer %d as DNG to %s\n",
+		     output_idx-1, outfile[output_idx]);
+	  ret_dump = x3f_dump_layer_as_dng(layer_x3f, tmpfile[output_idx],
+					   output_idx-1, fix_bad, denoise, wb,
+					   compress);
+
+	  x3f_delete(layer_x3f);
+	  layer_x3f = NULL;
+	  fclose(layer_f_in);
+	  layer_f_in = NULL;
+
+	  if (ret_dump != X3F_OK) {
+	    safecpy(failed_tmpfile, tmpfile[output_idx], MAXTMPPATH);
+	    break;
+	  }
+	}
+      }
       break;
     case PPMP3:
     case PPMP6:
-      x3f_printf(INFO, "Dump RAW as PPM to %s\n", outfile);
-      ret_dump = x3f_dump_raw_data_as_ppm(x3f, tmpfile,
+      x3f_printf(INFO, "Dump RAW as PPM to %s\n", outfile[0]);
+      ret_dump = x3f_dump_raw_data_as_ppm(x3f, tmpfile[0],
 					  color_encoding,
 					  crop, fix_bad, denoise, sgain, wb,
 					  file_type == PPMP6);
       break;
     case HISTOGRAM:
-      x3f_printf(INFO, "Dump RAW as CSV histogram to %s\n", outfile);
-      ret_dump = x3f_dump_raw_data_as_histogram(x3f, tmpfile,
+      x3f_printf(INFO, "Dump RAW as CSV histogram to %s\n", outfile[0]);
+      ret_dump = x3f_dump_raw_data_as_histogram(x3f, tmpfile[0],
 						color_encoding,
 						crop, fix_bad, denoise, sgain, wb,
 						log_hist);
@@ -446,13 +566,16 @@ int main(int argc, char *argv[])
     }
 
     if (X3F_OK != ret_dump) {
-      x3f_printf(ERR, "Could not dump to %s: %s\n", tmpfile, x3f_err(ret_dump));
+      if (failed_tmpfile[0] == '\0')
+	safecpy(failed_tmpfile, tmpfile[0], MAXTMPPATH);
+      x3f_printf(ERR, "Could not dump to %s: %s\n",
+		 failed_tmpfile, x3f_err(ret_dump));
+      unlink_temp_outputs(tmpfile, output_count);
+      unlink_outputs(outfile, output_count);
       errors++;
     } else {
-      if (rename(tmpfile, outfile) != 0) {
-	x3f_printf(ERR, "Could not rename %s to %s\n", tmpfile, outfile);
+      if (!rename_outputs(tmpfile, outfile, output_count))
 	errors++;
-      }
     }
 
     goto clean_up;
@@ -464,9 +587,12 @@ int main(int argc, char *argv[])
   clean_up:
 
     x3f_delete(x3f);
+    x3f_delete(layer_x3f);
 
     if (f_in != NULL)
       fclose(f_in);
+    if (layer_f_in != NULL)
+      fclose(layer_f_in);
   }
 
   if (files == 0) {

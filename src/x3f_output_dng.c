@@ -442,6 +442,79 @@ static x3f_return_t write_color_profile(x3f_t *x3f, TIFF *tiff_out, x3f_color_pr
     return X3F_OK;
 }
 
+static x3f_return_t open_dng_output(char *outfilename, int *fd, TIFF **f_out)
+{
+  *fd = open(outfilename, O_RDWR | BINMODE | O_CREAT | O_TRUNC, 0444);
+  if (*fd == -1) return X3F_OUTFILE_ERROR;
+
+  *f_out = TIFFFdOpen(*fd, outfilename, "w");
+  if (!*f_out) {
+    close(*fd);
+    return X3F_OUTFILE_ERROR;
+  }
+
+  return X3F_OK;
+}
+
+static void write_image_scanlines(TIFF *f_out, x3f_area16_t *image);
+
+static void write_linear_raw_image(TIFF *f_out,
+				   x3f_area16_t *image,
+				   int compress,
+				   uint16_t samples_per_pixel,
+				   float *black_level,
+				   uint32_t *white_level,
+				   uint32_t *active_area)
+{
+  TIFFSetField(f_out, TIFFTAG_SUBFILETYPE, 0);
+  TIFFSetField(f_out, TIFFTAG_IMAGEWIDTH, image->columns);
+  TIFFSetField(f_out, TIFFTAG_IMAGELENGTH, image->rows);
+  TIFFSetField(f_out, TIFFTAG_ROWSPERSTRIP, 32);
+  TIFFSetField(f_out, TIFFTAG_SAMPLESPERPIXEL, samples_per_pixel);
+  TIFFSetField(f_out, TIFFTAG_BITSPERSAMPLE, 16);
+  TIFFSetField(f_out, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
+  TIFFSetField(f_out, TIFFTAG_COMPRESSION,
+	       compress ? COMPRESSION_ADOBE_DEFLATE : COMPRESSION_NONE);
+  TIFFSetField(f_out, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_LINEARRAW);
+  TIFFSetField(f_out, TIFFTAG_DNGVERSION, "\001\004\000\000");
+  TIFFSetField(f_out, TIFFTAG_DNGBACKWARDVERSION, "\001\004\000\000");
+  /* Prevent further chroma denoising in DNG processing software */
+  TIFFSetField(f_out, TIFFTAG_CHROMABLURRADIUS, 0.0);
+  TIFFSetField(f_out, TIFFTAG_BLACKLEVEL, samples_per_pixel, black_level);
+  TIFFSetField(f_out, TIFFTAG_WHITELEVEL, samples_per_pixel, white_level);
+
+  if (active_area)
+    TIFFSetField(f_out, TIFFTAG_ACTIVEAREA, active_area);
+
+  write_image_scanlines(f_out, image);
+}
+
+static void write_image_scanlines(TIFF *f_out, x3f_area16_t *image)
+{
+  int row;
+
+  for (row=0; row < image->rows; row++)
+    TIFFWriteScanline(f_out, image->data + image->row_stride*row, row, 0);
+
+  TIFFWriteDirectory(f_out);
+}
+
+static int get_layer_active_area_as_dngrect(x3f_t *x3f, int layer,
+					    x3f_area16_t *image,
+					    uint32_t *rect)
+{
+  x3f_area16_t qtop;
+  int rescale = 1;
+
+  if (layer == 2 &&
+      x3f_image_area_qtop(x3f, &qtop) &&
+      qtop.rows == image->rows &&
+      qtop.columns == image->columns)
+    rescale = 0;
+
+  return get_camf_rect_as_dngrect(x3f, "ActiveImageArea", image, rescale, rect);
+}
+
 /* extern */
 x3f_return_t x3f_dump_raw_data_as_dng(x3f_t *x3f,
 				      char *outfilename,
@@ -453,9 +526,8 @@ x3f_return_t x3f_dump_raw_data_as_dng(x3f_t *x3f,
                       x3f_color_profile_t color_profile)
 {
   x3f_return_t ret;
-  int fd = open(outfilename, O_RDWR | BINMODE | O_CREAT | O_TRUNC, 0444);
+  int fd;
   TIFF *f_out;
-  uint64_t sub_ifds[1] = {0};
 
   double sensor_iso, capture_iso;
   double gain[3], gain_inv[3], gain_inv_mat[9];
@@ -465,13 +537,9 @@ x3f_return_t x3f_dump_raw_data_as_dng(x3f_t *x3f,
   x3f_area16_t image;
   x3f_image_levels_t ilevels;
   x3f_area8_t preview;
-  int row;
 
-  if (fd == -1) return X3F_OUTFILE_ERROR;
-  if (!(f_out = TIFFFdOpen(fd, outfilename, "w"))) {
-    close(fd);
-    return X3F_OUTFILE_ERROR;
-  }
+  ret = open_dng_output(outfilename, &fd, &f_out);
+  if (ret != X3F_OK) return ret;
 
   if (wb == NULL) wb = x3f_get_wb(x3f);
   if (!x3f_get_image(x3f, &image, &ilevels, NONE, 0,
@@ -499,10 +567,6 @@ x3f_return_t x3f_dump_raw_data_as_dng(x3f_t *x3f,
 //  TIFFSetField(f_out, TIFFTAG_COMPRESSION, COMPRESSION_NONE);
 //  TIFFSetField(f_out, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_RGB);
   TIFFSetField(f_out, TIFFTAG_ORIENTATION, ORIENTATION_TOPLEFT);
-//  TIFFSetField(f_out, TIFFTAG_DNGVERSION, "\001\004\000\000");
-//  TIFFSetField(f_out, TIFFTAG_DNGBACKWARDVERSION,
-//	       compress ? "\001\004\000\000" : "\001\003\000\000");
-//  TIFFSetField(f_out, TIFFTAG_SUBIFD, 1, sub_ifds);
 
   if (x3f_get_camf_float(x3f, "SensorISO", &sensor_iso) &&
       x3f_get_camf_float(x3f, "CaptureISO", &capture_iso)) {
@@ -593,13 +657,56 @@ x3f_return_t x3f_dump_raw_data_as_dng(x3f_t *x3f,
   if (get_camf_rect_as_dngrect(x3f, "ActiveImageArea", &image, 1, active_area))
     TIFFSetField(f_out, TIFFTAG_ACTIVEAREA, active_area);
 
-  for (row=0; row < image.rows; row++)
-    TIFFWriteScanline(f_out, image.data + image.row_stride*row, row, 0);
+  write_image_scanlines(f_out, &image);
 
-  TIFFWriteDirectory(f_out);
   TIFFClose(f_out);
   free(image.buf);
   free(preview.buf);
+
+  return X3F_OK;
+}
+
+/* extern */
+x3f_return_t x3f_dump_layer_as_dng(x3f_t *x3f,
+				   char *outfilename,
+				   int layer,
+				   int fix_bad,
+				   int denoise,
+				   char *wb,
+				   int compress)
+{
+  x3f_return_t ret;
+  int fd;
+  TIFF *f_out;
+  x3f_area16_t image;
+  double black;
+  float black_level;
+  uint32_t white_level;
+  uint32_t active_area[4];
+
+  ret = open_dng_output(outfilename, &fd, &f_out);
+  if (ret != X3F_OK) return ret;
+
+  if (wb == NULL) wb = x3f_get_wb(x3f);
+  if (!x3f_get_layer_image(x3f, &image, &black, &white_level, layer,
+			   fix_bad, denoise, wb)) {
+    x3f_printf(ERR, "Could not get layer %d image\n", layer);
+    TIFFClose(f_out);
+    return X3F_ARGUMENT_ERROR;
+  }
+
+  TIFFSetField(f_out, TIFFTAG_ORIENTATION, ORIENTATION_TOPLEFT);
+  black_level = black;
+
+  if (get_layer_active_area_as_dngrect(x3f, layer, &image, active_area))
+    write_linear_raw_image(f_out, &image, compress, 1,
+			   &black_level, &white_level, active_area);
+  else
+    write_linear_raw_image(f_out, &image, compress, 1,
+			   &black_level, &white_level, NULL);
+
+  TIFFClose(f_out);
+  free(image.buf);
 
   return X3F_OK;
 }

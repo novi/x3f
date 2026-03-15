@@ -40,6 +40,15 @@ extern int x3f_get_image(x3f_t *x3f,
 			 int apply_sgain,
 			 char *wb);
 
+extern int x3f_get_layer_image(x3f_t *x3f,
+			       x3f_area16_t *image,
+			       double *black_level,
+			       uint32_t *white_level,
+			       int layer,
+			       int fix_bad,
+			       int denoise,
+			       char *wb);
+
 extern int x3f_get_preview(x3f_t *x3f,
 			   x3f_area16_t *image,
 			   x3f_image_levels_t *ilevels,

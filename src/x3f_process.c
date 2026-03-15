@@ -890,6 +890,46 @@ static int expand_quattro(x3f_t *x3f, int denoise, x3f_area16_t *expanded)
   return 1;
 }
 
+static int is_quattro_raw(x3f_t *x3f)
+{
+  x3f_directory_entry_t *DE = x3f_get_raw(x3f);
+  x3f_directory_entry_header_t *DEH;
+  x3f_image_data_t *ID;
+
+  if (!DE) return 0;
+
+  DEH = &DE->header;
+  ID = &DEH->data_subsection.image_data;
+
+  return ID->type_format == X3F_IMAGE_RAW_QUATTRO ||
+    ID->type_format == X3F_IMAGE_RAW_SDQ ||
+    ID->type_format == X3F_IMAGE_RAW_SDQH;
+}
+
+static int copy_image_channel(x3f_area16_t *src, int channel, x3f_area16_t *dst)
+{
+  uint32_t row, col;
+
+  if (channel < 0 || (uint32_t)channel >= src->channels) return 0;
+
+  dst->columns = src->columns;
+  dst->rows = src->rows;
+  dst->channels = 1;
+  dst->row_stride = dst->columns;
+  dst->data = dst->buf =
+    malloc(dst->rows*dst->row_stride*sizeof(uint16_t));
+  if (!dst->data) return 0;
+
+  for (row = 0; row < src->rows; row++) {
+    for (col = 0; col < src->columns; col++) {
+      dst->data[dst->row_stride*row + col] =
+	src->data[src->row_stride*row + src->channels*col + channel];
+    }
+  }
+
+  return 1;
+}
+
 /* extern */ int x3f_get_image(x3f_t *x3f,
 			       x3f_area16_t *image,
 			       x3f_image_levels_t *ilevels,
@@ -940,6 +980,58 @@ static int expand_quattro(x3f_t *x3f, int denoise, x3f_area16_t *expanded)
   }
 
   if (ilevels) *ilevels = il;
+  return 1;
+}
+
+/* extern */ int x3f_get_layer_image(x3f_t *x3f,
+				     x3f_area16_t *image,
+				     double *black_level,
+				     uint32_t *white_level,
+				     int layer,
+				     int fix_bad,
+				     int denoise,
+				     char *wb)
+{
+  x3f_area16_t source;
+  x3f_image_levels_t ilevels;
+  int quattro;
+
+  if (layer < 0 || layer > 2) return 0;
+  if (wb == NULL) wb = x3f_get_wb(x3f);
+
+  quattro = is_quattro_raw(x3f);
+
+  if (quattro) {
+    if (!preprocess_data(x3f, fix_bad, wb, &ilevels)) return 0;
+
+    if (layer == 2) {
+      if (!x3f_image_area_qtop(x3f, &source)) return 0;
+      denoise = 0; /* Quattro layer output keeps native resolution. */
+    } else {
+      if (!x3f_image_area(x3f, &source)) return 0;
+    }
+
+    if (denoise) {
+      x3f_printf(WARN,
+		 "Ignoring denoise for Quattro layer %d native-resolution DNG\n",
+		 layer);
+    }
+  }
+  else {
+    if (!x3f_get_image(x3f, &source, &ilevels, NONE, 0,
+		       fix_bad, denoise, 0, wb))
+      return 0;
+  }
+
+  if (!copy_image_channel(&source, quattro && layer == 2 ? 0 : layer, image)) {
+    free(source.buf);
+    return 0;
+  }
+
+  if (black_level) *black_level = ilevels.black[layer];
+  if (white_level) *white_level = ilevels.white[layer];
+
+  free(source.buf);
   return 1;
 }
 

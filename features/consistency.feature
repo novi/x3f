@@ -54,6 +54,18 @@ Examples: images
 | x3f_test_files/_SDI8284.X3F | x3f_test_files/_SDI8284.X3F.dng | f0bcd7161a5dd1a671e78d3978a24264 |
 
 
+Scenario Outline: conversions to dng-layers will preserve the final DNG and emit all layer DNGs
+   Given an input image <image> without a <converted_image>
+    when the <image> is converted by the code to DNG-LAYERS
+    then the layer DNGs for <converted_image> exist
+    then the <converted_image> has the right <md5> hash value
+
+Examples: images
+| image | converted_image | md5 |
+| x3f_test_files/_SDI8040.X3F | x3f_test_files/_SDI8040.X3F.dng | efa34925dd4e4425726da74cbae9955b |
+| x3f_test_files/_SDI8284.X3F | x3f_test_files/_SDI8284.X3F.dng | 71f56b6bdb9f3e403af2c21d16c76664 |
+
+
 Scenario Outline: denoised conversions to tiff will produce the exact same outputs
    Given an input image <image> without a <converted_image>
     when the <image> is denoised and converted by the code to a cropped color TIFF
